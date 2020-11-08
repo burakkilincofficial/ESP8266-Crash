@@ -127,10 +127,7 @@ void setup(void) {
 
     init_led_resource();
     if (init_wifi() == WL_CONNECTED) {
-        Serial.print("Connetted to ");
-        Serial.print(wifi_ssid);
-        Serial.print("--- IP: ");
-        Serial.println(WiFi.localIP());
+        print_wifi_info();
     }
     else {
         Serial.print("Error connecting to: ");
@@ -141,6 +138,21 @@ void setup(void) {
 
     http_rest_server.begin();
     Serial.println("HTTP REST Server Started");
+}
+
+void print_wifi_info(){
+        Serial.println("");
+        Serial.print("Connetted to ");
+        Serial.println(wifi_ssid);
+        Serial.print("---Local IP : ");
+        Serial.println(WiFi.localIP());
+        Serial.print("---Gateway IP : ");
+        Serial.println(WiFi.gatewayIP());
+        Serial.print("---Mac address : ");
+        Serial.println(WiFi.macAddress());
+        Serial.print("---Subnet : ");
+        Serial.println(WiFi.subnetMask());
+       
 }
 
 void loop(void) {
