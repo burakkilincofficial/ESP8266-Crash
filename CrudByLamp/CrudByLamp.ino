@@ -92,6 +92,8 @@ void post_put_leds() {
                 json_to_resource(jsonBody);
                 http_rest_server.sendHeader("Location", "/leds/" + String(led_resource.id));
                 http_rest_server.send(201);
+                
+                digitalWrite(led_resource.gpio, led_resource.status);
                 pinMode(led_resource.gpio, OUTPUT);
             }
             else if (jsonBody["id"] == 0)
