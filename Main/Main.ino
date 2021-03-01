@@ -1,76 +1,160 @@
-#include "Arduino.h"
-#include <ESP8266WiFi.h>
-#include <WiFiClient.h>
+#include <stdio.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
- ///Merhabalar
-const char* ssid = "Bodesere";
-const char* password = "41611291080Br.";
- 
-ESP8266WebServer server(80);
- 
-// Serving Hello world
-void getHelloWord() {
-    server.send(200, "text/json", "{\"name\": \"Hello world\"}");
+#include <ArduinoJson.h>
+
+#define HTTP_REST_PORT 80
+#define WIFI_RETRY_DELAY 500
+#define MAX_WIFI_INIT_RETRY 50
+
+struct Led {
+    byte id;
+    byte gpio;
+    byte status;
+} led_resource;
+
+const char* wifi_ssid = "Bodesere";
+const char* wifi_passwd = "41611291080Br.";
+
+ESP8266WebServer http_rest_server(HTTP_REST_PORT);
+
+void init_led_resource()
+{
+    led_resource.id = 0;
+    led_resource.gpio = 0;
+    led_resource.status = LOW;
 }
- 
-// Define routing
-void restServerRouting() {
-    server.on("/", HTTP_GET, []() {
-        server.send(200, F("text/html"),
-            F("... BURAK ILYAS SEVKI IFTIHARLA SUNAR ILK GET ATILDI ..."));
+
+int init_wifi() {
+    int retries = 0;
+
+    Serial.println("Connecting to WiFi AP..........");
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(wifi_ssid, wifi_passwd);
+    // check the status of WiFi connection to be WL_CONNECTED
+    while ((WiFi.status() != WL_CONNECTED) && (retries < MAX_WIFI_INIT_RETRY)) {
+        retries++;
+        delay(WIFI_RETRY_DELAY);
+        Serial.print("#");
+    }
+    return WiFi.status(); // return the WiFi connection status
+}
+
+void get_leds() {
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& jsonObj = jsonBuffer.createObject();
+    char JSONmessageBuffer[200];
+
+    if (led_resource.id == 0)
+        http_rest_server.send(204);
+    else {
+        jsonObj["id"] = led_resource.id;
+        jsonObj["gpio"] = led_resource.gpio;
+        jsonObj["status"] = led_resource.status;
+        jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+        http_rest_server.send(200, "application/json", JSONmessageBuffer);
+    }
+}
+
+void json_to_resource(JsonObject& jsonBody) {
+    int id, gpio, status;
+
+    id = jsonBody["id"];
+    gpio = jsonBody["gpio"];
+    status = jsonBody["status"];
+
+    Serial.println(id);
+    Serial.println(gpio);
+    Serial.println(status);
+
+    led_resource.id = id;
+    led_resource.gpio = gpio;
+    led_resource.status = status;
+}
+
+void post_put_leds() {
+    StaticJsonBuffer<500> jsonBuffer;
+    String post_body = http_rest_server.arg("plain");
+    Serial.println(post_body);
+
+    JsonObject& jsonBody = jsonBuffer.parseObject(http_rest_server.arg("plain"));
+
+    Serial.print("HTTP Method: ");
+    Serial.println(http_rest_server.method());
+    
+    if (!jsonBody.success()) {
+        Serial.println("error in parsin json body");
+        http_rest_server.send(400);
+    }
+    else {   
+        if (http_rest_server.method() == HTTP_POST) {
+            if ((jsonBody["id"] != 0) && (jsonBody["id"] != led_resource.id)) {
+                json_to_resource(jsonBody);
+                http_rest_server.sendHeader("Location", "/leds/" + String(led_resource.id));
+                http_rest_server.send(201);
+                pinMode(led_resource.gpio, OUTPUT);
+            }
+            else if (jsonBody["id"] == 0)
+              http_rest_server.send(404);
+            else if (jsonBody["id"] == led_resource.id)
+              http_rest_server.send(409);
+        }
+        else if (http_rest_server.method() == HTTP_PUT) {
+            if (jsonBody["id"] == led_resource.id) {
+                json_to_resource(jsonBody);
+                http_rest_server.sendHeader("Location", "/leds/" + String(led_resource.id));
+                http_rest_server.send(200);
+                digitalWrite(led_resource.gpio, led_resource.status);
+            }
+            else
+              http_rest_server.send(404);
+        }
+    }
+}
+
+void config_rest_server_routing() {
+    http_rest_server.on("/", HTTP_GET, []() {
+        http_rest_server.send(200, "text/html",
+            "Welcome to the ESP8266 REST Web Server");
     });
-    server.on(F("/helloWorld"), HTTP_GET, getHelloWord);
+    http_rest_server.on("/leds", HTTP_GET, get_leds);
+    http_rest_server.on("/leds", HTTP_POST, post_put_leds);
+    http_rest_server.on("/leds", HTTP_PUT, post_put_leds);
 }
- 
-// Manage not found URL
-void handleNotFound() {
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET) ? "GET" : "POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  for (uint8_t i = 0; i < server.args(); i++) {
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
-  server.send(404, "text/plain", message);
-}
- 
+
 void setup(void) {
-  Serial.begin(115200);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.println("");
- 
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
- 
-  // Activate mDNS this is used to be able to connect to the server
-  // with local DNS hostmane esp8266.local
-  if (MDNS.begin("esp8266")) {
-    Serial.println("MDNS responder started");
-  }
- 
-  // Set server routing
-  restServerRouting();
-  // Set not found response
-  server.onNotFound(handleNotFound);
-  // Start server
-  server.begin();
-  Serial.println("HTTP server started");
+    Serial.begin(115200);
+
+    init_led_resource();
+    if (init_wifi() == WL_CONNECTED) {
+        print_wifi_info();
+    }
+    else {
+        Serial.print("Error connecting to: ");
+        Serial.println(wifi_ssid);
+    }
+
+    config_rest_server_routing();
+
+    http_rest_server.begin();
+    Serial.println("HTTP REST Server Started");
 }
- 
+
+void print_wifi_info(){
+        Serial.println("");
+        Serial.print("Connetted to ");
+        Serial.println(wifi_ssid);
+        Serial.print("---Local IP : ");
+        Serial.println(WiFi.localIP());
+        Serial.print("---Gateway IP : ");
+        Serial.println(WiFi.gatewayIP());
+        Serial.print("---Mac address : ");
+        Serial.println(WiFi.macAddress());
+        Serial.print("---Subnet : ");
+        Serial.println(WiFi.subnetMask());
+       
+}
+
 void loop(void) {
-  server.handleClient();
+    http_rest_server.handleClient();
 }

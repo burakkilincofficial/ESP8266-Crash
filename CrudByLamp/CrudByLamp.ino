@@ -12,8 +12,6 @@ struct Led {
     byte status;
 } led_resource;
 
-const char* wifi_ssid = "Bodesere";
-const char* wifi_passwd = "41611291080Br.";
 
 ESP8266WebServer http_rest_server(HTTP_REST_PORT);
 
